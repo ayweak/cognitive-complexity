@@ -9,8 +9,7 @@
   <version>1.0-SNAPSHOT</version>
 
   <name>cognitive-complexity</name>
-  <!-- FIXME change it to the project's website -->
-  <url>http://www.example.com</url>
+  <url>https://github.com/ayweak/cognitive-complexity</url>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -27,7 +26,7 @@
     </dependency>
     <dependency>
       <groupId>org.antlr</groupId>
-      <artifactId>antlr4-maven-plugin</artifactId>
+      <artifactId>antlr4-runtime</artifactId>
       <version>4.9.2</version>
     </dependency>
   </dependencies>
@@ -53,12 +52,10 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <version>2.22.1</version>
         </plugin>
-
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
           <version>3.0.2</version>
         </plugin>
-
         <plugin>
           <artifactId>maven-install-plugin</artifactId>
           <version>2.5.2</version>
@@ -88,6 +85,28 @@
               </goals>
             </execution>
           </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>2.0.0</version>
+          <configuration>
+            <excludedScopes>test</excludedScopes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>3.3.0</version>
+          <configuration>
+            <descriptorRefs>
+              <descriptorRef>jar-with-dependencies</descriptorRef>
+            </descriptorRefs>
+            <archive>
+              <manifest>
+                <mainClass>com.github.ayweak.cognitivecomplexity.Main</mainClass>
+              </manifest>
+            </archive>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>
