@@ -25,9 +25,10 @@ public class CognitiveComplexityCalculator {
     private Deque<List<NestingState>> statePpBranchStack;
     private CognitiveComplexity complexity;
     private CognitiveComplexity invalidComplexity;
+    private CognitiveComplexity ppComplexity;
 
     private NestingState ppState;
-    private int ppComplexity;
+    private boolean inPpIf;
 
     private Map<Token, Token> pairedParens;
 
@@ -51,10 +52,12 @@ public class CognitiveComplexityCalculator {
         ppState = new NestingState(new HashSet<>(Arrays.asList(
             CLexer.PpIf, CLexer.PpIfdef, CLexer.PpIfndef, CLexer.PpElif, CLexer.PpElse, CLexer.PpEndif
         )));
+        inPpIf = false;
 
         pairedParens = new HashMap<>();
 
         invalidComplexity = createInvalidComplexity();
+        ppComplexity = createInvalidComplexity();
         complexity = invalidComplexity;
 
         stream.fill();
@@ -77,7 +80,7 @@ public class CognitiveComplexityCalculator {
             }
         }
 
-        if (invalidComplexity.getComplexity() > 0) {
+        if (invalidComplexity.getComplexity() > ppComplexity.getComplexity()) {
             // wrong
         }
 
@@ -165,7 +168,7 @@ public class CognitiveComplexityCalculator {
                 if (type == CLexer.Else) {
                     state.removeLast();
                 } else {
-                    complexity.addComplexity(state.getNestingLevel() + 1);
+                    complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 }
                 state.addLast(token);
                 break;
@@ -178,13 +181,13 @@ public class CognitiveComplexityCalculator {
             }
             case CLexer.For: {
                 removeLastStmts();
-                complexity.addComplexity(state.getNestingLevel() + 1);
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 state.addLast(token);
                 break;
             }
             case CLexer.While: {
                 removeLastStmts();
-                complexity.addComplexity(state.getNestingLevel() + 1);
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 state.addLast(token);
                 break;
             }
@@ -195,7 +198,7 @@ public class CognitiveComplexityCalculator {
             }
             case CLexer.Switch: {
                 removeLastStmts();
-                complexity.addComplexity(state.getNestingLevel() + 1);
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 state.addLast(token);
                 break;
             }
@@ -213,7 +216,7 @@ public class CognitiveComplexityCalculator {
             }
             case CLexer.Question: {
                 removeLastBinaryLogicalOp();
-                complexity.addComplexity(state.getNestingLevel() + 1);
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 state.addLast(token);
                 break;
             }
@@ -384,31 +387,43 @@ public class CognitiveComplexityCalculator {
     private void handlePpToken(Token token) {
         switch (token.getType()) {
             case CLexer.PpIf: {
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
+                inPpIf = true;
                 break;
             }
             case CLexer.PpIfdef: {
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
                 break;
             }
             case CLexer.PpIfndef: {
+                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
                 break;
             }
             case CLexer.PpElif: {
+                complexity.addComplexity(1);
+                ppComplexity.addComplexity(1);
                 ppState.removeLast();
                 ppState.addLast(token);
                 statePpBranchStack.getLast().add(state);
                 state = new NestingState(stateStack.getLast());
+                inPpIf = true;
                 break;
             }
             case CLexer.PpElse: {
+                complexity.addComplexity(1);
+                ppComplexity.addComplexity(1);
                 ppState.removeLast();
                 ppState.addLast(token);
                 statePpBranchStack.getLast().add(state);
@@ -423,6 +438,70 @@ public class CognitiveComplexityCalculator {
                     }
                 }
                 stateStack.removeLast();
+                break;
+            }
+            case CLexer.LeftParen: {
+                if (inPpIf) {
+                    ppState.addLast(token);
+                }
+                break;
+            }
+            case CLexer.RightParen: {
+                if (inPpIf) {
+                    Token t = ppState.removeLast();
+                    if (t.getType() == CLexer.AndAnd || t.getType() == CLexer.OrOr) {
+                        t = ppState.removeLast();
+                    }
+                    if (t.getType() != CLexer.LeftParen) {
+                        // wrong
+                    }
+                }
+                break;
+            }
+            case CLexer.AndAnd: {
+                if (inPpIf) {
+                    int type = ppState.getLast().getType();
+                    if (type == CLexer.AndAnd) {
+                        // do nothing
+                    } else if (type == CLexer.OrOr) {
+                        ppState.removeLast();
+                        complexity.addComplexity(1);
+                        ppComplexity.addComplexity(1);
+                        ppState.addLast(token);
+                    } else {
+                        complexity.addComplexity(1);
+                        ppComplexity.addComplexity(1);
+                        ppState.addLast(token);
+                    }
+                }
+                break;
+            }
+            case CLexer.OrOr: {
+                if (inPpIf) {
+                    int type = ppState.getLast().getType();
+                    if (type == CLexer.AndAnd) {
+                        ppState.removeLast();
+                        complexity.addComplexity(1);
+                        ppComplexity.addComplexity(1);
+                        ppState.addLast(token);
+                    } else if (type == CLexer.OrOr) {
+                        // do nothing
+                    } else {
+                        complexity.addComplexity(1);
+                        ppComplexity.addComplexity(1);
+                        ppState.addLast(token);
+                    }
+                }
+                break;
+            }
+            case CLexer.Newline: {
+                if (!ppState.isEmpty()) {
+                    int type = ppState.getLast().getType();
+                    if (type == CLexer.AndAnd || type == CLexer.OrOr) {
+                        ppState.removeLast();
+                    }
+                }
+                inPpIf = false;
                 break;
             }
             default: {
