@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,10 +26,11 @@ public class CognitiveComplexityCalculator {
     private Deque<List<NestingState>> statePpBranchStack;
     private CognitiveComplexity complexity;
     private CognitiveComplexity invalidComplexity;
-    private CognitiveComplexity ppComplexity;
+    private LinkedHashMap<Token, PreprocessorCognitiveComplexity> ppComplexities;
 
     private NestingState ppState;
     private boolean inPpIf;
+    private Token currentPp;
 
     private Map<Token, Token> pairedParens;
 
@@ -57,8 +59,8 @@ public class CognitiveComplexityCalculator {
         pairedParens = new HashMap<>();
 
         invalidComplexity = createInvalidComplexity();
-        ppComplexity = createInvalidComplexity();
         complexity = invalidComplexity;
+        ppComplexities = new LinkedHashMap<>();
 
         stream.fill();
 
@@ -80,9 +82,7 @@ public class CognitiveComplexityCalculator {
             }
         }
 
-        if (invalidComplexity.getComplexity() > ppComplexity.getComplexity()) {
-            // wrong
-        }
+        addPreprocessorComplexity();
 
         if (!state.isEmpty()) {
             // wrong
@@ -102,6 +102,37 @@ public class CognitiveComplexityCalculator {
         c.setRightBrace(new CommonToken(CLexer.RightBrace));
         c.setComplexity(0);
         return c;
+    }
+
+    private void addPreprocessorComplexity() {
+        Token[] ppTokens = ppComplexities.keySet().toArray(new Token[0]);
+        int ppc = 0;
+        int k = 0;
+        for (int i = 0; i < ppTokens.length - 1; i++) {
+            if (ppTokens[i].getType() == CLexer.PpIf
+                || ppTokens[i].getType() == CLexer.PpIfdef
+                || ppTokens[i].getType() == CLexer.PpIfndef) {
+                ppc += ppComplexities.get(ppTokens[i]).getComplexity();
+            } else if (ppTokens[i].getType() == CLexer.PpEndif) {
+                ppc -= ppComplexities.get(ppTokens[i]).getComplexity();
+            }
+            int j;
+            for (j = k; j < results.size(); j++) {
+                CognitiveComplexity c = results.get(j);
+                if (ppTokens[i].getLine() > c.getEndLine()) {
+                    continue;
+                }
+                if (ppTokens[i + 1].getLine() < c.getEndLine()) {
+                    break;
+                }
+                c.addComplexity(ppc);
+            }
+            if (j == results.size()) {
+                break;
+            } else {
+                k = j;
+            }
+        }
     }
 
     private void handleToken(Token token) {
@@ -387,57 +418,98 @@ public class CognitiveComplexityCalculator {
     private void handlePpToken(Token token) {
         switch (token.getType()) {
             case CLexer.PpIf: {
-                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
-                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = new PreprocessorCognitiveComplexity();
+                    c.setIf(token);
+                    c.setComplexity(0);
+                    c.addComplexity(ppState.getNestingLevel() + 1);
+                    ppComplexities.put(token, c);
+                } else {
+                    complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                }
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
                 inPpIf = true;
+                currentPp = token;
                 break;
             }
             case CLexer.PpIfdef: {
-                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
-                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = new PreprocessorCognitiveComplexity();
+                    c.setIf(token);
+                    c.setComplexity(0);
+                    c.addComplexity(ppState.getNestingLevel() + 1);
+                    ppComplexities.put(token, c);
+                } else {
+                    complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                }
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
+                currentPp = token;
                 break;
             }
             case CLexer.PpIfndef: {
-                complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
-                ppComplexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = new PreprocessorCognitiveComplexity();
+                    c.setIf(token);
+                    c.setComplexity(0);
+                    c.addComplexity(ppState.getNestingLevel() + 1);
+                    ppComplexities.put(token, c);
+                } else {
+                    complexity.addComplexity(state.getNestingLevel() + ppState.getNestingLevel() + 1);
+                }
                 ppState.addLast(token);
                 stateStack.addLast(new NestingState(state));
                 statePpBranchStack.addLast(new ArrayList<NestingState>());
+                currentPp = token;
                 break;
             }
             case CLexer.PpElif: {
-                complexity.addComplexity(1);
-                ppComplexity.addComplexity(1);
-                ppState.removeLast();
+                Token t = ppState.removeLast();
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = ppComplexities.get(t);
+                    c.addComplexity(1);
+                    ppComplexities.put(token, c);
+                } else {
+                    complexity.addComplexity(1);
+                }
                 ppState.addLast(token);
                 statePpBranchStack.getLast().add(state);
                 state = new NestingState(stateStack.getLast());
                 inPpIf = true;
+                currentPp = token;
                 break;
             }
             case CLexer.PpElse: {
-                complexity.addComplexity(1);
-                ppComplexity.addComplexity(1);
-                ppState.removeLast();
+                Token t = ppState.removeLast();
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = ppComplexities.get(t);
+                    c.addComplexity(1);
+                    ppComplexities.put(token, c);
+                } else {
+                    complexity.addComplexity(1);
+                }
                 ppState.addLast(token);
                 statePpBranchStack.getLast().add(state);
                 state = new NestingState(stateStack.getLast());
+                currentPp = token;
                 break;
             }
             case CLexer.PpEndif: {
-                ppState.removeLast();
+                Token t = ppState.removeLast();
+                if (complexity == invalidComplexity) {
+                    PreprocessorCognitiveComplexity c = ppComplexities.get(t);
+                    ppComplexities.put(token, c);
+                }
                 for (NestingState s : statePpBranchStack.removeLast()) {
                     if (s.getNestingLevel() > state.getNestingLevel()) {
                         state = s;
                     }
                 }
                 stateStack.removeLast();
+                currentPp = token;
                 break;
             }
             case CLexer.LeftParen: {
@@ -465,12 +537,18 @@ public class CognitiveComplexityCalculator {
                         // do nothing
                     } else if (type == CLexer.OrOr) {
                         ppState.removeLast();
-                        complexity.addComplexity(1);
-                        ppComplexity.addComplexity(1);
+                        if (complexity == invalidComplexity) {
+                            ppComplexities.get(currentPp).addComplexity(1);
+                        } else {
+                            complexity.addComplexity(1);
+                        }
                         ppState.addLast(token);
                     } else {
-                        complexity.addComplexity(1);
-                        ppComplexity.addComplexity(1);
+                        if (complexity == invalidComplexity) {
+                            ppComplexities.get(currentPp).addComplexity(1);
+                        } else {
+                            complexity.addComplexity(1);
+                        }
                         ppState.addLast(token);
                     }
                 }
@@ -481,14 +559,20 @@ public class CognitiveComplexityCalculator {
                     int type = ppState.getLast().getType();
                     if (type == CLexer.AndAnd) {
                         ppState.removeLast();
-                        complexity.addComplexity(1);
-                        ppComplexity.addComplexity(1);
+                        if (complexity == invalidComplexity) {
+                            ppComplexities.get(currentPp).addComplexity(1);
+                        } else {
+                            complexity.addComplexity(1);
+                        }
                         ppState.addLast(token);
                     } else if (type == CLexer.OrOr) {
                         // do nothing
                     } else {
-                        complexity.addComplexity(1);
-                        ppComplexity.addComplexity(1);
+                        if (complexity == invalidComplexity) {
+                            ppComplexities.get(currentPp).addComplexity(1);
+                        } else {
+                            complexity.addComplexity(1);
+                        }
                         ppState.addLast(token);
                     }
                 }
